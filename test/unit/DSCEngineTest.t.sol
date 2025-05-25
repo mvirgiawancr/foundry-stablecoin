@@ -13,6 +13,9 @@ contract DSCEngineTest is Test {
     address public btcUsdPriceFeed;
     address public weth;
     address public wbtc;
+    address[] public priceFeeds;
+    address[] public tokenAddresses;
+
     uint256 public deployerKey;
     DSCEngine dscEngine;
     DecentralizedStableCoin dsc;
@@ -25,6 +28,14 @@ contract DSCEngineTest is Test {
         DeployDSC deployer = new DeployDSC();
         (dsc, dscEngine, config) = deployer.run();
         (ethUsdPriceFeed, btcUsdPriceFeed, weth, wbtc, deployerKey) = config.activeNetworkConfig();
+    }
+
+    function testRevertsIfTokenLengthDoesntMatchPriceFeedLength() public {
+        tokenAddresses.push(weth);
+        priceFeeds.push(ethUsdPriceFeed);
+        priceFeeds.push(btcUsdPriceFeed);
+        vm.expectRevert(DSCEngine.DSCEngine__TokenAddressAndPriceFeedAddressMustHaveSameLength.selector);
+        new DSCEngine(tokenAddresses, priceFeeds, address(dsc));
     }
 
     function testGetUsdValue() public view {
