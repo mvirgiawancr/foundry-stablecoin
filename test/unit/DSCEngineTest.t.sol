@@ -24,6 +24,15 @@ contract DSCEngineTest is Test {
     uint256 amountCollateral = 10 ether;
     uint256 public constant STARTING_USER_BALANCE = 10 ether;
 
+    modifier depositedCollateral() {
+        ERC20Mock(weth).mint(USER, amountCollateral);
+        vm.startPrank(USER);
+        ERC20Mock(weth).approve(address(dscEngine), amountCollateral);
+        dscEngine.depositCollateral(weth, amountCollateral);
+        vm.stopPrank();
+        _;
+    }
+
     function setUp() external {
         DeployDSC deployer = new DeployDSC();
         (dsc, dscEngine, config) = deployer.run();
@@ -46,12 +55,61 @@ contract DSCEngineTest is Test {
         assertEq(actualValue, expectedValue);
     }
 
+    function testgetTokenAmountFromUsd() public view {
+        uint256 usdAmount = 100 ether;
+        // $ 2000 per ETH
+        // 1000000000000000000 / 2000 = 0.05 ETH
+        uint256 expectedAmount = 0.05 ether;
+        uint256 actualTokenAmount = dscEngine.getTokenAmountFromUsd(weth, usdAmount);
+
+        assertEq(actualTokenAmount, expectedAmount);
+    }
+
+    function testRevertWithUnapprovedCollateral() public {
+        ERC20Mock virToken = new ERC20Mock();
+        virToken.mint(USER, amountCollateral);
+
+        vm.startPrank(USER);
+        vm.expectRevert(DSCEngine.DSCEngine__NotAllowedToken.selector);
+        dscEngine.depositCollateral(address(virToken), amountCollateral);
+        vm.stopPrank();
+    }
+
     function testRevertsIfCollateralZero() public {
         vm.startPrank(USER);
         ERC20Mock(weth).approve(address(dscEngine), amountCollateral);
 
         vm.expectRevert(DSCEngine.DSCEngine__MustBeMoreThanZero.selector);
         dscEngine.depositCollateral(weth, 0);
+        vm.stopPrank();
+    }
+
+    function testCanDepositAndGetAccountInfo() public depositedCollateral {
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dscEngine.getAccountInformation(USER);
+
+        uint256 expectedDscMinted = 0;
+        uint256 expectedDepositAmount = dscEngine.getTokenAmountFromUsd(weth, collateralValueInUsd);
+        assertEq(totalDscMinted, expectedDscMinted);
+        assertEq(expectedDepositAmount, amountCollateral);
+    }
+
+    function testCanDepositAndMintDsc() public depositedCollateral {
+        vm.startPrank(USER);
+        uint256 amountToMint = 1 ether;
+        dscEngine.mintDsc(amountToMint);
+        uint256 userBalance = dsc.balanceOf(USER);
+        assertEq(userBalance, amountToMint);
+        vm.stopPrank();
+    }
+
+    function testRevertsIfNotEnoughCollateral() public {
+        vm.startPrank(USER);
+
+        uint256 amountToMint = 1000 ether; // More than the collateral value
+
+        vm.expectRevert(DSCEngine.DSCEngine__BreaksHealthFactor.selector);
+        dscEngine.mintDsc(amountToMint);
+
         vm.stopPrank();
     }
 }
