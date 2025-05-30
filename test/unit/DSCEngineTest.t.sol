@@ -7,6 +7,7 @@ import {DecentralizedStableCoin} from "../../src/DecentralizedStableCoin.sol";
 import {DeployDSC} from "../../script/DeployDSC.s.sol";
 import {HelperConfig} from "../../script/HelperConfig.s.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {MockFailedTransferFrom} from "../mocks/MockFailedTransferFrom.sol";
 
 contract DSCEngineTest is Test {
     address public ethUsdPriceFeed;
@@ -116,5 +117,23 @@ contract DSCEngineTest is Test {
     function testCanDepositCollateralWithoutMinting() public depositedCollateral {
         uint256 userBalance = dsc.balanceOf(USER);
         assertEq(userBalance, 0);
+    }
+
+    function testRevertsIfTransferFromFails() public {
+        address owner = msg.sender;
+        vm.prank(owner);
+        MockFailedTransferFrom mockCollateralToken = new MockFailedTransferFrom();
+        tokenAddresses = [address(mockCollateralToken)];
+        priceFeeds = [ethUsdPriceFeed];
+        // DSCEngine receives the third parameter as dscAddress, not the tokenAddress used as collateral.
+        vm.prank(owner);
+        DSCEngine mockDsce = new DSCEngine(tokenAddresses, priceFeeds, address(dsc));
+        mockCollateralToken.mint(USER, amountCollateral);
+        vm.startPrank(USER);
+        ERC20Mock(address(mockCollateralToken)).approve(address(mockDsce), amountCollateral);
+        // Act / Assert
+        vm.expectRevert(DSCEngine.DSCEngine__TransferFailed.selector);
+        mockDsce.depositCollateral(address(mockCollateralToken), amountCollateral);
+        vm.stopPrank();
     }
 }
